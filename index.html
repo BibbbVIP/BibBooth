@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Photobooth 101</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <div class="camera-wrap">
+      <div class="header">
+        <h2>Photobooth 101</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="capture">Capture</button>
+          <button id="restart" class="ghost">Restart</button>
+          <button id="download" class="ghost" disabled>Download</button>
+        </div>
+      </div>
+
+      <div class="preview" id="preview">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <img id="framePreview" src="" alt="Frame Preview">
+        <div id="countdown" class="countdown"></div>
+      </div>
+
+      <div class="controls">
+        <label for="gridSelect">Grid:</label>
+        <select id="gridSelect">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+
+        <label for="countdownSelect">Countdown:</label>
+        <select id="countdownSelect">
+          <option value="5">5s</option>
+          <option value="4">4s</option>
+          <option value="3">3s</option>
+          <option value="2">2s</option>
+          <option value="1">1s</option>
+          <option value="0">Off</option>
+        </select>
+      </div>
+
+      <div class="result-preview" id="resultPreview">
+        <h3>Preview Result</h3>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+          <label for="layoutSelect">Layout:</label>
+          <select id="layoutSelect">
+            <option value="vertical">Vertical</option>
+            <option value="horizontal">Horizontal</option>
+          </select>
+        </div>
+        <div class="result-grid" id="resultGrid"></div>
+      </div>
+    </div>
+
+    <aside class="sidebar">
+      <h3>Frame Overlay</h3>
+      <div class="frames-list" id="framesList"></div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
