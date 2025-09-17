@@ -1,5 +1,5 @@
 // Photobooth app (app.js)
-// Place frames in the same folder or update file paths.
+// Fixed for deployment on GitHub Pages and Netlify
 
 const availableFrames = [
   {name:'None', file:''},
@@ -25,7 +25,37 @@ const resultGrid = document.getElementById('resultGrid');
 const layoutSelect = document.getElementById('layoutSelect');
 
 let selectedFrame = '';
-let latestFinal = { vertical: null, horizontal: null }; // store both layouts for download
+let latestFinal = { vertical: null, horizontal: null };
+let mediaStream = null;
+
+// Create error display element
+function createErrorDisplay(message) {
+  const errorDiv = document.createElement('div');
+  errorDiv.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(220, 38, 127, 0.9);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 300px;
+    font-size: 14px;
+    line-height: 1.4;
+    z-index: 1000;
+  `;
+  errorDiv.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 10px;">Camera Access Error</div>
+    <div style="margin-bottom: 15px;">${message}</div>
+    <button onclick="this.parentElement.remove(); startCamera();" 
+            style="background: white; color: #dc267f; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+      Try Again
+    </button>
+  `;
+  return errorDiv;
+}
 
 function renderFrameList(){
   framesList.innerHTML='';
@@ -33,7 +63,7 @@ function renderFrameList(){
     const el = document.createElement('div');
     el.className='frame-option'+(idx===0?' selected':'');
     el.dataset.file = f.file;
-    el.innerHTML = `<img src="${f.file}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'240\\' height=\\'160\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'#333\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'#fff\\' font-size=\\'14\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\'>${encodeURIComponent(f.name)}</text></svg>'"/><span>${f.name}</span>`;
+    el.innerHTML = `<img src="${f.file}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'240\\' height=\\'160\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23333\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'%23fff\\' font-size=\\'14\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\'>${encodeURIComponent(f.name)}</text></svg>'"/><span>${f.name}</span>`;
     el.addEventListener('click', ()=>{
       document.querySelectorAll('.frame-option').forEach(x=>x.classList.remove('selected'));
       el.classList.add('selected');
@@ -50,24 +80,131 @@ function renderFrameList(){
   });
 }
 
-renderFrameList();
-
 async function startCamera(){
-  try{
-    const stream = await navigator.mediaDevices.getUserMedia({video:{width:1280,height:720}});
+  // Clear any existing error messages
+  document.querySelectorAll('.preview > div[style*="position: absolute"][style*="z-index: 1000"]').forEach(el => el.remove());
+  
+  // Check if we're on a secure context (HTTPS or localhost)
+  if (!window.isSecureContext && location.protocol !== 'https:' && !location.hostname.includes('localhost') && location.hostname !== '127.0.0.1') {
+    const errorMsg = 'Camera access requires HTTPS. Please ensure your site is served over HTTPS.';
+    document.getElementById('preview').appendChild(createErrorDisplay(errorMsg));
+    console.error('Insecure context - camera access blocked');
+    return;
+  }
+
+  // Check if getUserMedia is supported
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const errorMsg = 'Your browser doesn\'t support camera access. Please use a modern browser like Chrome, Firefox, or Safari.';
+    document.getElementById('preview').appendChild(createErrorDisplay(errorMsg));
+    console.error('getUserMedia not supported');
+    return;
+  }
+
+  try {
+    // Stop any existing stream first
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Request camera access with multiple fallback constraints
+    const constraints = [
+      // Primary: high quality
+      { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } },
+      // Fallback: standard quality
+      { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } },
+      // Basic fallback
+      { video: { facingMode: 'user' } },
+      // Last resort
+      { video: true }
+    ];
+
+    let stream = null;
+    let lastError = null;
+
+    for (const constraint of constraints) {
+      try {
+        console.log('Trying camera constraint:', constraint);
+        stream = await navigator.mediaDevices.getUserMedia(constraint);
+        break;
+      } catch (err) {
+        console.warn('Camera constraint failed:', constraint, err);
+        lastError = err;
+        continue;
+      }
+    }
+
+    if (!stream) {
+      throw lastError || new Error('All camera constraints failed');
+    }
+
+    mediaStream = stream;
     video.srcObject = stream;
+    
+    // Wait for video to be ready
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = resolve;
+      video.onerror = reject;
+      
+      // Timeout after 10 seconds
+      setTimeout(() => reject(new Error('Video load timeout')), 10000);
+    });
+
     await video.play();
-  }catch(e){
-    console.error('Webcam access failed:',e);
-    alert('Failed to access webcam.');
+    
+    // Enable capture button
+    captureBtn.disabled = false;
+    captureBtn.textContent = 'Capture';
+    
+    console.log('Camera started successfully');
+
+  } catch (error) {
+    console.error('Camera access failed:', error);
+    
+    let errorMessage = 'Failed to access camera. ';
+    
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+      errorMessage += 'Please allow camera access and refresh the page.';
+    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+      errorMessage += 'No camera found. Please connect a camera and try again.';
+    } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+      errorMessage += 'Camera is busy or unavailable. Please close other apps using the camera and try again.';
+    } else if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
+      errorMessage += 'Camera doesn\'t meet requirements. Trying with basic settings...';
+      
+      // Try one more time with minimal constraints
+      try {
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop());
+        }
+        
+        const basicStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        mediaStream = basicStream;
+        video.srcObject = basicStream;
+        await video.play();
+        captureBtn.disabled = false;
+        return;
+      } catch (basicError) {
+        errorMessage = 'Camera access failed completely. Please check your camera settings and permissions.';
+      }
+    } else {
+      errorMessage += `Error: ${error.message || 'Unknown error'}`;
+    }
+    
+    document.getElementById('preview').appendChild(createErrorDisplay(errorMessage));
+    captureBtn.disabled = true;
+    captureBtn.textContent = 'Camera Error';
   }
 }
-startCamera();
 
 captureBtn.addEventListener('click', async ()=>{
+  if (!mediaStream || !video.videoWidth) {
+    alert('Camera not ready. Please wait for camera to load or try refreshing the page.');
+    return;
+  }
+  
   const takes = parseInt(gridSelect.value,10);
   const countdownVal = parseInt(countdownSelect.value,10);
-  let photosData = []; // data URLs per take
+  let photosData = [];
 
   async function takeOne(){
     return new Promise(resolve=>{
@@ -95,63 +232,65 @@ captureBtn.addEventListener('click', async ()=>{
     canvas.width = w;
     canvas.height = h;
     ctx.drawImage(video,0,0,w,h);
-    // return raw capture (without frame)
     return canvas.toDataURL('image/png');
   }
 
-  for(let i=0;i<takes;i++){
-    const photo = await takeOne();
-    photosData.push(photo);
-  }
-
-  // Create vertical strip
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-
-  const stripV = document.createElement('canvas');
-  stripV.width = w;
-  stripV.height = h * photosData.length;
-  const sctxV = stripV.getContext('2d');
-
-  for(let i=0;i<photosData.length;i++){
-    const img = await loadImage(photosData[i]);
-    sctxV.drawImage(img,0,h*i,w,h);
-    if(selectedFrame){
-      try{
-        const overlay = await loadImage(selectedFrame);
-        sctxV.drawImage(overlay,0,h*i,w,h);
-      }catch(e){console.warn('Frame per-photo failed',e);}
+  try {
+    for(let i=0;i<takes;i++){
+      const photo = await takeOne();
+      photosData.push(photo);
     }
-  }
 
-  // Create horizontal strip
-  const stripH = document.createElement('canvas');
-  stripH.width = w * photosData.length;
-  stripH.height = h;
-  const sctxH = stripH.getContext('2d');
+    // Create vertical strip
+    const w = video.videoWidth;
+    const h = video.videoHeight;
 
-  for(let i=0;i<photosData.length;i++){
-    const img = await loadImage(photosData[i]);
-    sctxH.drawImage(img,w*i,0,w,h);
-    if(selectedFrame){
-      try{
-        const overlay = await loadImage(selectedFrame);
-        sctxH.drawImage(overlay,w*i,0,w,h);
-      }catch(e){console.warn('Frame per-photo failed',e);}
+    const stripV = document.createElement('canvas');
+    stripV.width = w;
+    stripV.height = h * photosData.length;
+    const sctxV = stripV.getContext('2d');
+
+    for(let i=0;i<photosData.length;i++){
+      const img = await loadImage(photosData[i]);
+      sctxV.drawImage(img,0,h*i,w,h);
+      if(selectedFrame){
+        try{
+          const overlay = await loadImage(selectedFrame);
+          sctxV.drawImage(overlay,0,h*i,w,h);
+        }catch(e){console.warn('Frame per-photo failed',e);}
+      }
     }
+
+    // Create horizontal strip
+    const stripH = document.createElement('canvas');
+    stripH.width = w * photosData.length;
+    stripH.height = h;
+    const sctxH = stripH.getContext('2d');
+
+    for(let i=0;i<photosData.length;i++){
+      const img = await loadImage(photosData[i]);
+      sctxH.drawImage(img,w*i,0,w,h);
+      if(selectedFrame){
+        try{
+          const overlay = await loadImage(selectedFrame);
+          sctxH.drawImage(overlay,w*i,0,w,h);
+        }catch(e){console.warn('Frame per-photo failed',e);}
+      }
+    }
+
+    const finalV = stripV.toDataURL('image/png');
+    const finalH = stripH.toDataURL('image/png');
+
+    latestFinal.vertical = finalV;
+    latestFinal.horizontal = finalH;
+
+    showPreview(finalV);
+    enableDownloadForCurrentLayout();
+    
+  } catch (error) {
+    console.error('Photo capture failed:', error);
+    alert('Failed to capture photos. Please try again.');
   }
-
-  const finalV = stripV.toDataURL('image/png');
-  const finalH = stripH.toDataURL('image/png');
-
-  latestFinal.vertical = finalV;
-  latestFinal.horizontal = finalH;
-
-  // Show preview (default vertical)
-  showPreview(finalV);
-
-  // Update download button appearance & action
-  enableDownloadForCurrentLayout();
 });
 
 function showPreview(dataUrl){
@@ -163,11 +302,9 @@ function showPreview(dataUrl){
   });
   resultGrid.appendChild(imgEl);
   resultPreview.style.display = 'block';
-  // make download button look like capture
   downloadBtn.disabled = false;
   downloadBtn.textContent = 'Download';
   applyCaptureStyleToDownload();
-  // default layout select to vertical
   layoutSelect.value = 'vertical';
 }
 
@@ -185,6 +322,10 @@ function applyCaptureStyleToDownload(){
     a.download = layout === 'vertical' ? 'photobooth_strip_vertical.png' : 'photobooth_strip_horizontal.png';
     document.body.appendChild(a); a.click(); a.remove();
   };
+}
+
+function enableDownloadForCurrentLayout() {
+  applyCaptureStyleToDownload();
 }
 
 layoutSelect.addEventListener('change', ()=>{
@@ -226,7 +367,26 @@ restartBtn.addEventListener('click', ()=>{
   downloadBtn.classList.add('ghost');
   resultPreview.style.display='none';
   latestFinal = { vertical: null, horizontal: null };
+  
+  // Clear any error messages
+  document.querySelectorAll('.preview > div[style*="position: absolute"][style*="z-index: 1000"]').forEach(el => el.remove());
 });
 
-// Initialize frames UI
+// Handle page visibility changes to restart camera if needed
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && (!mediaStream || !mediaStream.active)) {
+    console.log('Page became visible, checking camera...');
+    startCamera();
+  }
+});
+
+// Handle beforeunload to clean up camera stream
+window.addEventListener('beforeunload', () => {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop());
+  }
+});
+
+// Initialize
 renderFrameList();
+startCamera();
