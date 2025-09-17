@@ -1,5 +1,4 @@
 // Photobooth app (app.js)
-// Fixed for deployment on GitHub Pages and Netlify
 
 const availableFrames = [
   {name:'None', file:''},
@@ -321,6 +320,11 @@ function applyCaptureStyleToDownload(){
     a.href = data;
     a.download = layout === 'vertical' ? 'photobooth_strip_vertical.png' : 'photobooth_strip_horizontal.png';
     document.body.appendChild(a); a.click(); a.remove();
+    
+    // Auto return to initial state after download
+    setTimeout(() => {
+      resetToInitialState();
+    }, 500); // Small delay to ensure download starts
   };
 }
 
@@ -338,6 +342,11 @@ layoutSelect.addEventListener('change', ()=>{
       a.href = data;
       a.download = layout === 'vertical' ? 'photobooth_strip_vertical.png' : 'photobooth_strip_horizontal.png';
       document.body.appendChild(a); a.click(); a.remove();
+      
+      // Auto return to initial state after download
+      setTimeout(() => {
+        resetToInitialState();
+      }, 500);
     };
   }
 });
@@ -357,20 +366,36 @@ function loadImage(src){
   return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=src;});
 }
 
-restartBtn.addEventListener('click', ()=>{
-  canvas.style.display='none';
-  video.style.display='block';
-  framePreview.style.display = selectedFrame? 'block':'none';
-  downloadBtn.disabled=true;
-  downloadBtn.textContent='Download';
+// Function to reset to initial state (replaces restart button functionality)
+function resetToInitialState() {
+  // Hide result preview
+  resultPreview.style.display = 'none';
+  
+  // Reset canvas and video display
+  canvas.style.display = 'none';
+  video.style.display = 'block';
+  
+  // Reset frame preview
+  framePreview.style.display = selectedFrame ? 'block' : 'none';
+  
+  // Reset download button to disabled state
+  downloadBtn.disabled = true;
+  downloadBtn.textContent = 'Download';
   downloadBtn.removeAttribute('style');
   downloadBtn.classList.add('ghost');
-  resultPreview.style.display='none';
+  
+  // Clear latest final images
   latestFinal = { vertical: null, horizontal: null };
   
   // Clear any error messages
   document.querySelectorAll('.preview > div[style*="position: absolute"][style*="z-index: 1000"]').forEach(el => el.remove());
-});
+  
+  // Reset layout selector to default
+  layoutSelect.value = 'vertical';
+  
+  // Reset countdown if any
+  countdownEl.textContent = '';
+}
 
 // Handle page visibility changes to restart camera if needed
 document.addEventListener('visibilitychange', () => {
