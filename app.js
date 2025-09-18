@@ -1,4 +1,5 @@
 // Photobooth app (app.js)
+// Fixed for deployment on GitHub Pages and Netlify
 
 const availableFrames = [
   {name:'None', file:''},
@@ -57,25 +58,48 @@ function createErrorDisplay(message) {
 }
 
 function renderFrameList(){
-  framesList.innerHTML='';
+  const framesList = document.getElementById('framesList');
+  const framesListDesktop = document.getElementById('framesList-desktop');
+  
+  // Clear both lists
+  if (framesList) framesList.innerHTML = '';
+  if (framesListDesktop) framesListDesktop.innerHTML = '';
+  
   availableFrames.forEach((f, idx)=>{
-    const el = document.createElement('div');
-    el.className='frame-option'+(idx===0?' selected':'');
-    el.dataset.file = f.file;
-    el.innerHTML = `<img src="${f.file}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'240\\' height=\\'160\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23333\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'%23fff\\' font-size=\\'14\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\'>${encodeURIComponent(f.name)}</text></svg>'"/><span>${f.name}</span>`;
-    el.addEventListener('click', ()=>{
-      document.querySelectorAll('.frame-option').forEach(x=>x.classList.remove('selected'));
-      el.classList.add('selected');
-      selectedFrame = f.file || '';
-      if(selectedFrame){
-        framePreview.src = selectedFrame;
-        framePreview.style.display='block';
-      } else {
-        framePreview.src = '';
-        framePreview.style.display='none';
-      }
-    });
-    framesList.appendChild(el);
+    // Create elements for both mobile and desktop
+    const createFrameOption = () => {
+      const el = document.createElement('div');
+      el.className = 'frame-option' + (idx === 0 ? ' selected' : '');
+      el.dataset.file = f.file;
+      el.innerHTML = `<img src="${f.file}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'240\\' height=\\'160\\'><rect width=\\'100%\\' height=\\'100%\\' fill=\\'%23333\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'%23fff\\' font-size=\\'14\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\'>${encodeURIComponent(f.name)}</text></svg>'"/><span>${f.name}</span>`;
+      
+      el.addEventListener('click', ()=>{
+        // Update both desktop and mobile selections
+        document.querySelectorAll('.frame-option').forEach(x=>x.classList.remove('selected'));
+        document.querySelectorAll(`[data-file="${f.file}"]`).forEach(x=>x.classList.add('selected'));
+        
+        selectedFrame = f.file || '';
+        if(selectedFrame){
+          framePreview.src = selectedFrame;
+          framePreview.style.display='block';
+        } else {
+          framePreview.src = '';
+          framePreview.style.display='none';
+        }
+      });
+      
+      return el;
+    };
+    
+    // Add to mobile list
+    if (framesList) {
+      framesList.appendChild(createFrameOption());
+    }
+    
+    // Add to desktop list  
+    if (framesListDesktop) {
+      framesListDesktop.appendChild(createFrameOption());
+    }
   });
 }
 
@@ -105,15 +129,19 @@ async function startCamera(){
       mediaStream.getTracks().forEach(track => track.stop());
     }
 
-    // Request camera access with multiple fallback constraints
+    // Enhanced camera constraints for better mobile experience
+    const isMobile = window.innerWidth <= 768;
     const constraints = [
-      // Primary: high quality
+      // Mobile-optimized constraints
+      ...(isMobile ? [
+        { video: { width: { ideal: 720, max: 1280 }, height: { ideal: 720, max: 1280 }, facingMode: 'user' } },
+        { video: { width: { ideal: 640, max: 1024 }, height: { ideal: 480, max: 768 }, facingMode: 'user' } },
+      ] : []),
+      // Desktop constraints
       { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } },
-      // Fallback: standard quality
       { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } },
-      // Basic fallback
+      // Basic fallbacks
       { video: { facingMode: 'user' } },
-      // Last resort
       { video: true }
     ];
 
@@ -141,7 +169,18 @@ async function startCamera(){
     
     // Wait for video to be ready
     await new Promise((resolve, reject) => {
-      video.onloadedmetadata = resolve;
+      video.onloadedmetadata = () => {
+        // Adjust video display for mobile to match result better
+        if (isMobile) {
+          const videoAspectRatio = video.videoWidth / video.videoHeight;
+          const containerAspectRatio = video.clientWidth / video.clientHeight;
+          
+          if (Math.abs(videoAspectRatio - containerAspectRatio) > 0.1) {
+            video.style.objectFit = 'cover';
+          }
+        }
+        resolve();
+      };
       video.onerror = reject;
       
       // Timeout after 10 seconds
