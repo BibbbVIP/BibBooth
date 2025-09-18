@@ -269,7 +269,13 @@ captureBtn.addEventListener('click', async ()=>{
     const h = video.videoHeight;
     canvas.width = w;
     canvas.height = h;
-    ctx.drawImage(video,0,0,w,h);
+    
+    // Flip the context to match the non-mirrored preview
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, -w, 0, w, h);
+    ctx.restore();
+    
     return canvas.toDataURL('image/png');
   }
 
